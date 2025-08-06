@@ -54,3 +54,4 @@ def send_to_vincere(data):
 @app.route('/', methods=['GET'])
 def root():
     return "👋 Hello from the RChilli → Vincere Webhook"
+
