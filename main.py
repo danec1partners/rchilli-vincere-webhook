@@ -1,84 +1,65 @@
-from flask import Flask, request, jsonify
 import os
+import json
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET")
+app.secret_key = os.getenv("SESSION_SECRET")
 
-
-@app.route('/', methods=['GET'])
-def home():
-    return "✅ RChilli to Vincere webhook is alive!"
-
+USER_KEY = os.getenv("RCHILLI_USER_KEY")
+SUBUSER_ID = os.getenv("RCHILLI_SUBUSER_ID")
+VERSION = os.getenv("RCHILLI_VERSION", "8.0.0")
+VINCERE_TOKEN = os.getenv("VINCERE_ACCESS_TOKEN")
 
 @app.route('/', methods=['POST'])
 def webhook():
-    try:
-        print("📥 POST received")
-        print("📄 Content-Type:", request.headers.get('Content-Type', ''))
+    print("📥 POST received")
+    data = request.get_json(force=True)
+    print("🧾 Payload:", {k: v for k, v in data.items() if k != "ResumeInbox"})
 
-        # Parse JSON data
-        raw_data = request.get_json(force=True)
-        print("🧾 JSON payload received:", raw_data)
+    inbox = data.get("ResumeInbox", {})
+    base64data = inbox.get("Base64Data", "")
+    filename = inbox.get("Filename", "resume")
 
-        # Extract RChilliEmailInfo
-        print("🔍 Parsing RChilliEmailInfo")
-        parsed_data = raw_data.get("RChilliEmailInfo", {})
+    if not base64data:
+        print("❌ No Base64 data in ResumeInbox")
+        return jsonify({"error": "Missing ResumeInbox.Base64Data"}), 400
 
-        # Basic candidate info
-        resume = parsed_data.get("ResumeParserData", {})
-        name = resume.get("Name", {})
-        email_list = resume.get("Email", [])
-        phone_list = resume.get("PhoneNumber", [])
-        address_list = resume.get("Address", [])
-
-        candidate = {
-            "firstName": name.get("FirstName", ""),
-            "lastName": name.get("LastName", ""),
-            "email": email_list[0]["EmailAddress"] if email_list else "",
-            "phone": phone_list[0]["FormattedNumber"] if phone_list else "",
-            "address": address_list[0]["FormattedAddress"] if address_list else ""
+    print("🔄 Sending binary data to RChilli for parsing...")
+    r = requests.post(
+        "https://rest.rchilli.com/RChilliParser/Rchilli/parseResumeBinary",
+        json={
+            "filedata": base64data,
+            "filename": filename,
+            "userkey": USER_KEY,
+            "version": VERSION,
+            "subuserid": SUBUSER_ID
         }
+    )
+    print("🔁 RChilli response:", r.status_code)
+    parsed = r.json().get("ResumeParserData", {})
 
-        print("👤 Candidate Name:", name.get("FormattedName", "N/A"))
-        print("📧 Email:", candidate["email"])
+    first = parsed.get("Name", {}).get("FirstName","")
+    last = parsed.get("Name", {}).get("LastName","")
+    email = parsed.get("Email", [{}])[0].get("EmailAddress","")
+    phone = parsed.get("PhoneNumber", [{}])[0].get("FormattedNumber","")
 
-        send_to_vincere(candidate)
+    print(f"👤 Parsed: {first} {last}, {email}, {phone}")
 
-        return jsonify({"status": "Processed ✅"}), 200
+    # Send to Vincere
+    resp = requests.post(
+        "https://api.vincere.io/v2/candidate",
+        headers={"Authorization": f"Bearer {VINCERE_TOKEN}", "Content-Type": "application/json"},
+        json={
+            "firstName": first,
+            "lastName": last,
+            "email": email,
+            "phone": phone,
+            "source": "RChilli Webhook"
+        }
+    )
+    print("✅ Vincere returned:", resp.status_code, resp.text)
+    return jsonify({"status": "ok"}), 200
 
-    except Exception as e:
-        print("❌ Error in webhook:", str(e))
-        return jsonify({"error": "Webhook failed", "message": str(e)}), 400
-
-
-def send_to_vincere(candidate):
-    url = "https://api.vincere.io/v2/candidate"
-
-    headers = {
-        "Authorization": f"Bearer {os.getenv('VINCERE_ACCESS_TOKEN')}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "firstName": candidate.get("firstName", ""),
-        "lastName": candidate.get("lastName", ""),
-        "email": candidate.get("email", ""),
-        "phone": candidate.get("phone", ""),
-        "address": candidate.get("address", ""),
-        "source": "RChilli Webhook",
-        "status": "New Lead"
-    }
-
-    print("🚀 Sending to Vincere...")
-    print("📦 Payload to Vincere:", payload)
-
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        print("📨 Vincere response:", response.status_code, response.text)
-    except Exception as e:
-        print("❌ Error sending to Vincere:", str(e))
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
