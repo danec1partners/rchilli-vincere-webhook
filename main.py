@@ -22,25 +22,31 @@ def webhook():
         rchilli_info = raw_data.get("RChilliEmailInfo", {})
 
         if not rchilli_info or "Base64Data" not in rchilli_info:
-            print("❌ No RChilliEmailInfo found in payload")
-            return jsonify({"error": "No resume JSON found in zip"}), 400
+            print("❌ No RChilliEmailInfo or Base64Data found in payload")
+            return jsonify({"error": "No resume data provided"}), 400
 
-        # Decode and unzip resume
+        # Decode and unzip the Base64 data
         zip_data = base64.b64decode(rchilli_info["Base64Data"])
         with zipfile.ZipFile(io.BytesIO(zip_data), 'r') as zip_ref:
-            for file_name in zip_ref.namelist():
-                if file_name.endswith('.json'):
+            filenames = zip_ref.namelist()
+            print("📁 Files inside zip:", filenames)
+
+            json_file_found = False
+
+            for file_name in filenames:
+                if file_name.lower().endswith('.json'):
+                    json_file_found = True
                     with zip_ref.open(file_name) as json_file:
                         resume_data = json.load(json_file)
                         print("📄 Resume JSON extracted:", resume_data)
 
-                        # Extract key details
+                        # Extract key fields
                         first_name = resume_data.get("FirstName", "")
                         last_name = resume_data.get("LastName", "")
                         email = resume_data.get("Email", "")
                         phone = resume_data.get("Mobile", "")
                         address = resume_data.get("Address", "")
-                        
+
                         print(f"👤 Candidate: {first_name} {last_name} | {email}")
 
                         send_to_vincere({
@@ -55,20 +61,20 @@ def webhook():
 
                         return jsonify({"status": "Resume parsed and sent"}), 200
 
-        print("❌ No .json file found in zip")
-        return jsonify({"error": "No resume JSON found in zip"}), 400
+            if not json_file_found:
+                print("❌ No .json file found in zip")
+                return jsonify({"error": "No resume JSON found in zip"}), 400
 
     except Exception as e:
         print("❌ Error processing webhook:", e)
         return jsonify({"error": str(e)}), 500
-
 
 def send_to_vincere(payload):
     print("🚀 Sending to Vincere...")
     print("📦 Payload to Vincere:", payload)
 
     url = f"https://{os.getenv('VINCERE_DOMAIN')}/vincere/api/candidate"
-    
+
     client_id = os.getenv('VINCERE_CLIENT_ID')
     client_secret = os.getenv('VINCERE_CLIENT_SECRET')
     auth_url = os.getenv('VINCERE_AUTH_URL')
