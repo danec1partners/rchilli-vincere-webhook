@@ -5,85 +5,80 @@ import requests
 app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET")
 
-def send_to_vincere(parsed_data):
-    try:
-        print("🚀 Sending to Vincere...")
-
-        # Set up Vincere credentials and endpoint
-        vincere_client_id = os.environ.get("VINCERE_CLIENT_ID")
-        vincere_client_secret = os.environ.get("VINCERE_CLIENT_SECRET")
-        vincere_api_url = os.environ.get("VINCERE_API_URL", "https://api.vincere.io/v2/candidate")
-
-        if not all([vincere_client_id, vincere_client_secret]):
-            raise ValueError("Missing Vincere credentials")
-
-        # Compose headers
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": vincere_client_id,
-            "x-api-secret": vincere_client_secret
-        }
-
-        # Map RChilli fields to Vincere format
-        candidate_payload = {
-            "firstName": parsed_data.get("Name", {}).get("FirstName", ""),
-            "lastName": parsed_data.get("Name", {}).get("LastName", ""),
-            "email": parsed_data.get("Email", [{}])[0].get("EmailAddress", ""),
-            "phone": parsed_data.get("PhoneNumber", [{}])[0].get("FormattedNumber", ""),
-            "address": parsed_data.get("Address", [{}])[0].get("FormattedAddress", ""),
-            "source": "RChilli Webhook",
-            "status": "New Lead"
-        }
-
-        print("📦 Payload to Vincere:", candidate_payload)
-
-        # Send request to Vincere
-        response = requests.post(vincere_api_url, headers=headers, json=candidate_payload)
-        print("📨 Vincere response:", response.status_code, response.text)
-
-        return response.status_code, response.text
-
-    except Exception as e:
-        print("❌ Vincere error:", str(e))
-        return 500, str(e)
 
 @app.route('/', methods=['GET'])
 def home():
-    return "✅ RChilli to Vincere webhook is alive"
+    return "✅ RChilli to Vincere webhook is alive!"
+
 
 @app.route('/', methods=['POST'])
 def webhook():
     try:
         print("📥 POST received")
+        print("📄 Content-Type:", request.headers.get('Content-Type', ''))
 
-        content_type = request.headers.get('Content-Type', '')
-        print("📄 Content-Type:", content_type)
+        # Parse JSON data
+        raw_data = request.get_json(force=True)
+        print("🧾 JSON payload received:", raw_data)
 
-        if 'application/json' in content_type:
-            raw_data = request.get_json(force=True)
-            print("🧾 JSON payload received:")
-            print(raw_data)
-        else:
-            print("❌ Unsupported content type")
-            return jsonify({"error": "Unsupported content type"}), 400
-
+        # Extract RChilliEmailInfo
         print("🔍 Parsing RChilliEmailInfo")
         parsed_data = raw_data.get("RChilliEmailInfo", {})
 
-        if not parsed_data:
-            print("❌ No RChilliEmailInfo found in payload")
-            return jsonify({"error": "Missing RChilliEmailInfo"}), 400
+        # Basic candidate info
+        resume = parsed_data.get("ResumeParserData", {})
+        name = resume.get("Name", {})
+        email_list = resume.get("Email", [])
+        phone_list = resume.get("PhoneNumber", [])
+        address_list = resume.get("Address", [])
 
-        print("👤 Candidate Name:", parsed_data.get("Name", {}).get("FullName", "N/A"))
-        print("📧 Email:", parsed_data.get("Email", [{}])[0].get("EmailAddress", "N/A"))
+        candidate = {
+            "firstName": name.get("FirstName", ""),
+            "lastName": name.get("LastName", ""),
+            "email": email_list[0]["EmailAddress"] if email_list else "",
+            "phone": phone_list[0]["FormattedNumber"] if phone_list else "",
+            "address": address_list[0]["FormattedAddress"] if address_list else ""
+        }
 
-        status, message = send_to_vincere(parsed_data)
+        print("👤 Candidate Name:", name.get("FormattedName", "N/A"))
+        print("📧 Email:", candidate["email"])
 
-        return jsonify({"status": "Processed", "vincere_status": status, "message": message}), 200
+        send_to_vincere(candidate)
+
+        return jsonify({"status": "Processed ✅"}), 200
 
     except Exception as e:
-        print("❌ Webhook error:", str(e))
-        return jsonify({"error": str(e)}), 500
+        print("❌ Error in webhook:", str(e))
+        return jsonify({"error": "Webhook failed", "message": str(e)}), 400
+
+
+def send_to_vincere(candidate):
+    url = "https://api.vincere.io/v2/candidate"
+
+    headers = {
+        "Authorization": f"Bearer {os.getenv('VINCERE_ACCESS_TOKEN')}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "firstName": candidate.get("firstName", ""),
+        "lastName": candidate.get("lastName", ""),
+        "email": candidate.get("email", ""),
+        "phone": candidate.get("phone", ""),
+        "address": candidate.get("address", ""),
+        "source": "RChilli Webhook",
+        "status": "New Lead"
+    }
+
+    print("🚀 Sending to Vincere...")
+    print("📦 Payload to Vincere:", payload)
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        print("📨 Vincere response:", response.status_code, response.text)
+    except Exception as e:
+        print("❌ Error sending to Vincere:", str(e))
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
