@@ -69,7 +69,6 @@ def send_to_vincere(payload):
 
     url = f"https://{os.getenv('VINCERE_DOMAIN')}/vincere/api/candidate"
     
-    # Auth headers
     client_id = os.getenv('VINCERE_CLIENT_ID')
     client_secret = os.getenv('VINCERE_CLIENT_SECRET')
     auth_url = os.getenv('VINCERE_AUTH_URL')
@@ -95,4 +94,3 @@ def send_to_vincere(payload):
 
     except Exception as e:
         print("❌ Failed to send to Vincere:", e)
-
