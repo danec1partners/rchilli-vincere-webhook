@@ -1,65 +1,56 @@
+from flask import Flask, request, jsonify
 import os
 import json
 import requests
-from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SESSION_SECRET")
-
-USER_KEY = os.getenv("RCHILLI_USER_KEY")
-SUBUSER_ID = os.getenv("RCHILLI_SUBUSER_ID")
-VERSION = os.getenv("RCHILLI_VERSION", "8.0.0")
-VINCERE_TOKEN = os.getenv("VINCERE_ACCESS_TOKEN")
 
 @app.route('/', methods=['POST'])
 def webhook():
-    print("📥 POST received")
-    data = request.get_json(force=True)
-    print("🧾 Payload:", {k: v for k, v in data.items() if k != "ResumeInbox"})
+    try:
+        print("📥 POST received")
 
-    inbox = data.get("ResumeInbox", {})
-    base64data = inbox.get("Base64Data", "")
-    filename = inbox.get("Filename", "resume")
+        content_type = request.headers.get('Content-Type', '')
+        print(f"📄 Content-Type: {content_type}")
 
-    if not base64data:
-        print("❌ No Base64 data in ResumeInbox")
-        return jsonify({"error": "Missing ResumeInbox.Base64Data"}), 400
+        if 'application/json' in content_type:
+            raw_data = request.get_json(force=True)
+            print(f"🧾 JSON payload received: {json.dumps(raw_data)[:300]}...")  # limit length for logs
+        elif 'multipart/form-data' in content_type:
+            raw_data = request.form.to_dict()
+            print(f"📎 Form data received: {raw_data}")
+        else:
+            raw_data = request.data.decode('utf-8')
+            print(f"📄 Raw payload received: {raw_data}")
+            return jsonify({"error": "Unsupported content type"}), 400
 
-    print("🔄 Sending binary data to RChilli for parsing...")
-    r = requests.post(
-        "https://rest.rchilli.com/RChilliParser/Rchilli/parseResumeBinary",
-        json={
-            "filedata": base64data,
-            "filename": filename,
-            "userkey": USER_KEY,
-            "version": VERSION,
-            "subuserid": SUBUSER_ID
-        }
-    )
-    print("🔁 RChilli response:", r.status_code)
-    parsed = r.json().get("ResumeParserData", {})
+        print("🔍 Parsing RChilliEmailInfo")
+        parsed_data = raw_data.get("RChilliEmailInfo", {})
+        print(f"🧠 Parsed RChilliEmailInfo: {json.dumps(parsed_data)[:300]}...")  # again limit log length
 
-    first = parsed.get("Name", {}).get("FirstName","")
-    last = parsed.get("Name", {}).get("LastName","")
-    email = parsed.get("Email", [{}])[0].get("EmailAddress","")
-    phone = parsed.get("PhoneNumber", [{}])[0].get("FormattedNumber","")
+        print("🚀 Sending to Vincere...")
+        send_to_vincere(parsed_data)
 
-    print(f"👤 Parsed: {first} {last}, {email}, {phone}")
+        return jsonify({"status": "Success ✅"}), 200
 
-    # Send to Vincere
-    resp = requests.post(
-        "https://api.vincere.io/v2/candidate",
-        headers={"Authorization": f"Bearer {VINCERE_TOKEN}", "Content-Type": "application/json"},
-        json={
-            "firstName": first,
-            "lastName": last,
-            "email": email,
-            "phone": phone,
-            "source": "RChilli Webhook"
-        }
-    )
-    print("✅ Vincere returned:", resp.status_code, resp.text)
-    return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        print(f"❌ Webhook error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+
+def send_to_vincere(data):
+    print("📦 Payload to Vincere:", {
+        "firstName": data.get("Name", {}).get("FirstName", ""),
+        "lastName": data.get("Name", {}).get("LastName", ""),
+        "email": data.get("Email", [{}])[0].get("EmailAddress", ""),
+        "phone": data.get("PhoneNumber", [{}])[0].get("FormattedNumber", ""),
+        "address": data.get("Address", [{}])[0].get("FormattedAddress", ""),
+        "source": "RChilli Webhook",
+        "status": "New Lead"
+    })
+    # 🔐 This is where the API call to Vincere would go
+
+
+@app.route('/', methods=['GET'])
+def root():
+    return "👋 Hello from the RChilli → Vincere Webhook"
