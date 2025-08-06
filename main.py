@@ -28,8 +28,14 @@ def webhook():
         # Decode and unzip resume
         zip_data = base64.b64decode(rchilli_info["Base64Data"])
         with zipfile.ZipFile(io.BytesIO(zip_data), 'r') as zip_ref:
+            print("📂 Files in ZIP:", zip_ref.namelist())
+            
+            found_json = False
+
             for file_name in zip_ref.namelist():
+                print(f"🔍 Checking file: {file_name}")
                 if file_name.endswith('.json'):
+                    found_json = True
                     with zip_ref.open(file_name) as json_file:
                         resume_data = json.load(json_file)
                         print("📄 Resume JSON extracted:", resume_data)
@@ -55,8 +61,9 @@ def webhook():
 
                         return jsonify({"status": "Resume parsed and sent"}), 200
 
-        print("❌ No .json file found in zip")
-        return jsonify({"error": "No resume JSON found in zip"}), 400
+            if not found_json:
+                print("❌ No .json file found in ZIP")
+                return jsonify({"error": "No resume JSON found in zip"}), 400
 
     except Exception as e:
         print("❌ Error processing webhook:", e)
@@ -94,8 +101,3 @@ def send_to_vincere(payload):
 
     except Exception as e:
         print("❌ Failed to send to Vincere:", e)
-
-
-# 🔥 Start Flask app on Render
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
