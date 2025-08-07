@@ -23,14 +23,7 @@ def get_access_token():
 def find_existing_candidate(email, phone, access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
     url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate"
-
-    if email:
-        params = {"$filter": f"email eq '{email}'"}
-    elif phone:
-        params = {"$filter": f"phone eq '{phone}'"}
-    else:
-        return None
-
+    params = {"$filter": f"email eq '{email}'"} if email else {"$filter": f"phone eq '{phone}'"}
     response = requests.get(url, headers=headers, params=params)
     response.raise_for_status()
     data = response.json()
@@ -46,26 +39,35 @@ def upload_cv(candidate_id, file_path, access_token):
         print(f"📎 CV upload status: {response.status_code} {response.text}")
 
 def create_or_update_candidate(candidate_data, file_path):
-    access_token = get_access_token()
-    existing = find_existing_candidate(candidate_data["email"], candidate_data["phone"], access_token)
+    try:
+        access_token = get_access_token()
+        print("🔐 Access token retrieved.")
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
+        existing = find_existing_candidate(candidate_data["email"], candidate_data["phone"], access_token)
+        print(f"🧠 Existing candidate: {existing}")
 
-    if existing:
-        candidate_id = existing["id"]
-        url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate/{candidate_id}"
-        print(f"🔄 Updating candidate ID: {candidate_id}")
-        requests.put(url, headers=headers, json=candidate_data)
-    else:
-        url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate"
-        print("➕ Creating new candidate")
-        response = requests.post(url, headers=headers, json=candidate_data)
-        candidate_id = response.json().get("id")
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
 
-    upload_cv(candidate_id, file_path, access_token)
+        if existing:
+            candidate_id = existing["id"]
+            url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate/{candidate_id}"
+            print(f"🔄 Updating candidate ID: {candidate_id}")
+            update_response = requests.put(url, headers=headers, json=candidate_data)
+            print(f"🔄 Update response: {update_response.status_code} - {update_response.text}")
+        else:
+            url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate"
+            print("➕ Creating new candidate")
+            response = requests.post(url, headers=headers, json=candidate_data)
+            print(f"➕ Creation response: {response.status_code} - {response.text}")
+            candidate_id = response.json().get("id")
+
+        upload_cv(candidate_id, file_path, access_token)
+
+    except Exception as e:
+        print("❌ Error in create_or_update_candidate:", str(e))
 
 @app.route("/", methods=["POST"])
 def webhook():
@@ -84,10 +86,6 @@ def webhook():
 
         base64_data = resume_info["Base64Data"]
         email = resume_info.get("EmailId", "unknown@example.com")
-        phone = resume_info.get("Phone", "")
-        first_name = resume_info.get("FirstName", "NoFirstName")
-        last_name = resume_info.get("LastName", "NoLastName")
-
         file_bytes = base64.b64decode(base64_data)
         file_path = f"/tmp/{email.replace('@', '_at_')}_resume.pdf"
 
@@ -96,10 +94,10 @@ def webhook():
         print(f"📄 Resume file saved as: {file_path}")
 
         candidate_data = {
-            "firstName": first_name,
-            "lastName": last_name,
+            "firstName": resume_info.get("FirstName", ""),
+            "lastName": resume_info.get("LastName", ""),
             "email": email,
-            "phone": phone,
+            "phone": resume_info.get("Phone", ""),
             "source": "RChilli Webhook",
             "status": "New Lead"
         }
