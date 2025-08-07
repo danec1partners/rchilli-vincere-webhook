@@ -5,7 +5,6 @@ import requests
 
 app = Flask(__name__)
 
-# Environment variables
 VINCERE_DOMAIN = os.getenv("VINCERE_DOMAIN")
 VINCERE_CLIENT_ID = os.getenv("VINCERE_CLIENT_ID")
 VINCERE_CLIENT_SECRET = os.getenv("VINCERE_CLIENT_SECRET")
@@ -37,10 +36,11 @@ def find_existing_candidate(email, phone, access_token):
 def upload_cv(candidate_id, file_path, access_token):
     url = f"https://{VINCERE_DOMAIN}/vincere/api/document/candidate/{candidate_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
+
     with open(file_path, 'rb') as f:
         files = {"file": (os.path.basename(file_path), f, "application/pdf")}
         response = requests.post(url, headers=headers, files=files)
-        print(f"📎 CV upload status: {response.status_code} - {response.text}")
+        print(f"📎 CV upload status: {response.status_code} {response.text}")
 
 def create_or_update_candidate(candidate_data, file_path):
     try:
@@ -89,14 +89,18 @@ def webhook():
             print("❌ No ResumeInbox or Base64Data found in payload")
             return jsonify({"error": "No Base64Data found"}), 400
 
+        print("📦 ResumeInbox found in payload")
+
         base64_data = resume_info["Base64Data"]
         email = resume_info.get("EmailId", "unknown@example.com")
+        print(f"📧 Email extracted: {email}")
+
         file_bytes = base64.b64decode(base64_data)
         file_path = f"/tmp/{email.replace('@', '_at_')}_resume.pdf"
 
         with open(file_path, "wb") as f:
             f.write(file_bytes)
-        print(f"📄 Resume file saved as: {file_path}")
+        print(f"📄 Resume file saved at: {file_path}")
 
         candidate_data = {
             "firstName": resume_info.get("FirstName", ""),
@@ -107,7 +111,11 @@ def webhook():
             "status": "New Lead"
         }
 
+        print("🧾 Candidate data prepared:", candidate_data)
+
         create_or_update_candidate(candidate_data, file_path)
+
+        print("✅ Candidate processing complete")
         return jsonify({"status": "Candidate processed and CV uploaded"}), 200
 
     except Exception as e:
