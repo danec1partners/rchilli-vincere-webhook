@@ -112,6 +112,7 @@ def webhook():
         }
 
         print("🧾 Candidate data prepared:", candidate_data)
+print("⚠️ TEST POINT: About to call create_or_update_candidate()")
 
         create_or_update_candidate(candidate_data, file_path)
 
