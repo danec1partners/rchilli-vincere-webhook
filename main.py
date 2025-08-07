@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
 import base64
 import os
-import json
+import requests
 
 app = Flask(__name__)
+
 
 @app.route("/", methods=["POST"])
 def webhook():
@@ -33,8 +34,16 @@ def webhook():
 
         print(f"📄 Resume file saved as: {file_path}")
 
+        # Placeholder for sending the file to Vincere's API
+        # send_to_vincere_with_file(file_path, email)
+
         return jsonify({"status": "File processed"}), 200
 
     except Exception as e:
         print("❌ Error processing webhook:", str(e))
         return jsonify({"error": str(e)}), 500
+
+
+# ✅ This is what was missing before
+if __name__ == "__main__":
+    app.run()
