@@ -5,10 +5,70 @@ import requests
 
 app = Flask(__name__)
 
+VINCERE_DOMAIN = os.getenv("VINCERE_DOMAIN")
+VINCERE_CLIENT_ID = os.getenv("VINCERE_CLIENT_ID")
+VINCERE_CLIENT_SECRET = os.getenv("VINCERE_CLIENT_SECRET")
+VINCERE_AUTH_URL = os.getenv("VINCERE_AUTH_URL")
+
+
+def get_access_token():
+    auth_payload = {
+        "grant_type": "client_credentials",
+        "client_id": VINCERE_CLIENT_ID,
+        "client_secret": VINCERE_CLIENT_SECRET
+    }
+    response = requests.post(VINCERE_AUTH_URL, data=auth_payload)
+    response.raise_for_status()
+    return response.json().get("access_token")
+
+
+def find_existing_candidate(email, phone, access_token):
+    headers = {"Authorization": f"Bearer {access_token}"}
+    url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate"
+
+    params = {"$filter": f"email eq '{email}'"} if email else {"$filter": f"phone eq '{phone}'"}
+    response = requests.get(url, headers=headers, params=params)
+    response.raise_for_status()
+    data = response.json()
+    return data[0] if data else None
+
+
+def upload_cv(candidate_id, file_path, access_token):
+    url = f"https://{VINCERE_DOMAIN}/vincere/api/document/candidate/{candidate_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    with open(file_path, 'rb') as f:
+        files = {"file": (os.path.basename(file_path), f, "application/pdf")}
+        response = requests.post(url, headers=headers, files=files)
+        print(f"📎 CV upload status: {response.status_code} {response.text}")
+
+
+def create_or_update_candidate(candidate_data, file_path):
+    access_token = get_access_token()
+    existing = find_existing_candidate(candidate_data["email"], candidate_data["phone"], access_token)
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    if existing:
+        candidate_id = existing["id"]
+        url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate/{candidate_id}"
+        print(f"🔄 Updating candidate ID: {candidate_id}")
+        requests.put(url, headers=headers, json=candidate_data)
+    else:
+        url = f"https://{VINCERE_DOMAIN}/vincere/api/candidate"
+        print("➕ Creating new candidate")
+        response = requests.post(url, headers=headers, json=candidate_data)
+        candidate_id = response.json().get("id")
+
+    upload_cv(candidate_id, file_path, access_token)
+
+
 @app.route("/", methods=["POST"])
 def webhook():
     print("📥 POST received")
-
     content_type = request.headers.get("Content-Type", "")
     print("📄 Content-Type:", content_type)
 
@@ -17,29 +77,30 @@ def webhook():
         print("🧾 JSON payload received:", raw_data)
 
         resume_info = raw_data.get("ResumeInbox", {})
-
         if not resume_info or "Base64Data" not in resume_info:
             print("❌ No ResumeInbox or Base64Data found in payload")
             return jsonify({"error": "No Base64Data found"}), 400
 
-        # Decode and save CV file
         base64_data = resume_info["Base64Data"]
-        email = resume_info.get("EmailId", "unknown")
+        email = resume_info.get("EmailId", "unknown@example.com")
         file_bytes = base64.b64decode(base64_data)
         file_path = f"/tmp/{email.replace('@', '_at_')}_resume.pdf"
 
-        try:
-            with open(file_path, "wb") as f:
-                f.write(file_bytes)
-            print(f"📄 Resume file saved as: {file_path}")
-        except Exception as e:
-            print(f"❌ Failed to save file: {e}")
-            return jsonify({"error": "Failed to save file"}), 500
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
+        print(f"📄 Resume file saved as: {file_path}")
 
-        # Placeholder for uploading to Vincere
-        # send_to_vincere_with_file(file_path, email)
+        candidate_data = {
+            "firstName": resume_info.get("FirstName", ""),
+            "lastName": resume_info.get("LastName", ""),
+            "email": email,
+            "phone": resume_info.get("Phone", ""),
+            "source": "RChilli Webhook",
+            "status": "New Lead"
+        }
 
-        return jsonify({"status": "File processed"}), 200
+        create_or_update_candidate(candidate_data, file_path)
+        return jsonify({"status": "Candidate processed and CV uploaded"}), 200
 
     except Exception as e:
         print("❌ Error processing webhook:", str(e))
