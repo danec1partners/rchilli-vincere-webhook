@@ -5,10 +5,15 @@ import requests
 
 app = Flask(__name__)
 
+# Environment variables
 VINCERE_DOMAIN = os.getenv("VINCERE_DOMAIN")
 VINCERE_CLIENT_ID = os.getenv("VINCERE_CLIENT_ID")
 VINCERE_CLIENT_SECRET = os.getenv("VINCERE_CLIENT_SECRET")
 VINCERE_AUTH_URL = os.getenv("VINCERE_AUTH_URL")
+
+print("🔍 ENV - DOMAIN:", VINCERE_DOMAIN)
+print("🔍 ENV - CLIENT_ID:", VINCERE_CLIENT_ID)
+print("🔍 ENV - AUTH_URL:", VINCERE_AUTH_URL)
 
 def get_access_token():
     auth_payload = {
@@ -32,14 +37,14 @@ def find_existing_candidate(email, phone, access_token):
 def upload_cv(candidate_id, file_path, access_token):
     url = f"https://{VINCERE_DOMAIN}/vincere/api/document/candidate/{candidate_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
-
     with open(file_path, 'rb') as f:
         files = {"file": (os.path.basename(file_path), f, "application/pdf")}
         response = requests.post(url, headers=headers, files=files)
-        print(f"📎 CV upload status: {response.status_code} {response.text}")
+        print(f"📎 CV upload status: {response.status_code} - {response.text}")
 
 def create_or_update_candidate(candidate_data, file_path):
     try:
+        print("🚀 Calling create_or_update_candidate()...")
         access_token = get_access_token()
         print("🔐 Access token retrieved.")
 
