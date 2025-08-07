@@ -5,7 +5,6 @@ import requests
 
 app = Flask(__name__)
 
-
 @app.route("/", methods=["POST"])
 def webhook():
     print("📥 POST received")
@@ -29,12 +28,15 @@ def webhook():
         file_bytes = base64.b64decode(base64_data)
         file_path = f"/tmp/{email.replace('@', '_at_')}_resume.pdf"
 
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
+        try:
+            with open(file_path, "wb") as f:
+                f.write(file_bytes)
+            print(f"📄 Resume file saved as: {file_path}")
+        except Exception as e:
+            print(f"❌ Failed to save file: {e}")
+            return jsonify({"error": "Failed to save file"}), 500
 
-        print(f"📄 Resume file saved as: {file_path}")
-
-        # Placeholder for sending the file to Vincere's API
+        # Placeholder for uploading to Vincere
         # send_to_vincere_with_file(file_path, email)
 
         return jsonify({"status": "File processed"}), 200
@@ -42,9 +44,3 @@ def webhook():
     except Exception as e:
         print("❌ Error processing webhook:", str(e))
         return jsonify({"error": str(e)}), 500
-
-
-# ✅ This makes it work on Render by binding to the correct host/port
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
