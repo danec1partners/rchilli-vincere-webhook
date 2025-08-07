@@ -1,11 +1,9 @@
-
 from flask import Flask, request, jsonify
 import base64
 import os
-import requests
+import json
 
 app = Flask(__name__)
-
 
 @app.route("/", methods=["POST"])
 def webhook():
@@ -34,9 +32,6 @@ def webhook():
             f.write(file_bytes)
 
         print(f"📄 Resume file saved as: {file_path}")
-
-        # Placeholder: Here you'd send the file to Vincere's document upload API
-        # send_to_vincere_with_file(file_path, email)
 
         return jsonify({"status": "File processed"}), 200
 
